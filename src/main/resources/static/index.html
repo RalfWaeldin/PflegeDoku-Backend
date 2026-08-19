@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pflegedoku - Spracherfassung</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 min-h-screen p-6 font-sans">
+    <div class="max-w-4xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <header class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <i class="fa-solid font-notes-medical text-blue-600"></i> Visiten-Dokumentation
+            </h1>
+            <span class="text-xs font-semibold bg-blue-100 text-blue-800 px-3 py-1 rounded-full">Spring AI Demo</span>
+        </header>
+
+        <!-- Input Section -->
+        <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Mitarbeiter ID</label>
+                    <input type="text" id="mitarbeiterId" value="pfleger-456" class="w-full p-2.5 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">Bewohner ID (optional)</label>
+                    <input type="text" id="bewohnerId" value="bewohner-202" class="w-full p-2.5 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between items-center mb-1">
+                    <label class="block text-xs font-semibold text-slate-600">Diktat / Audio-Text</label>
+                    <button id="micBtn" onclick="toggleDictation()" class="text-xs px-3 py-1 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center gap-1.5 font-medium transition">
+                        <i class="fa-solid fa-microphone text-red-500"></i> <span id="micText">Einsprechen starten</span>
+                    </button>
+                </div>
+                <textarea id="audioText" rows="4" placeholder="Sprechen oder tippen Sie hier Ihr Diktat ein..." class="w-full p-3 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">Herr Johann Schneider hat heute Morgen die Einnahme von Ramipril abgelehnt. Blutdruck 140 zu 90.</textarea>
+            </div>
+
+            <button onclick="analysiereText()" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg flex justify-center items-center gap-2 shadow-sm transition">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Diktat analysieren
+            </button>
+        </section>
+
+        <!-- Result Section -->
+        <section id="resultSection" class="hidden bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-5">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h2 class="text-lg font-bold text-slate-800">Analyse-Ergebnis</h2>
+                <div class="flex items-center gap-2">
+                    <span id="badgeSprache" class="text-xs font-semibold px-2.5 py-1 rounded bg-slate-100 text-slate-700"></span>
+                    <span id="badgeStatus" class="text-xs font-semibold px-2.5 py-1 rounded bg-amber-100 text-amber-800"></span>
+                </div>
+            </div>
+
+            <!-- Pflegebericht -->
+            <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Pflegebericht (Deutsch)</h3>
+                <p id="resPflegebericht" class="text-slate-800 font-medium text-sm leading-relaxed"></p>
+            </div>
+
+            <!-- Vitalwerte Grid -->
+            <div>
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Vitalwerte</h3>
+                <div id="resVitalwerte" class="grid grid-cols-3 gap-3"></div>
+            </div>
+
+            <!-- Listen Grid -->
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Medikamente</h3>
+                    <ul id="resMedikamente" class="text-sm space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-200 min-h-[60px]"></ul>
+                </div>
+                <div>
+                    <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Besonderheiten</h3>
+                    <ul id="resBesonderheiten" class="text-sm space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-200 min-h-[60px]"></ul>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Web Speech API Integration
+        let recognition = null;
+        let isRecording = false;
+
+        if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'de-DE';
+
+            recognition.onresult = (event) => {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    transcript += event.results[i][0].transcript;
+                }
+                document.getElementById('audioText').value = transcript;
+            };
+
+            recognition.onend = () => {
+                isRecording = false;
+                document.getElementById('micText').innerText = 'Einsprechen starten';
+                document.getElementById('micBtn').classList.remove('bg-red-100', 'text-red-700');
+            };
+        }
+
+        function toggleDictation() {
+            if (!recognition) {
+                alert('Spracherkennung wird von diesem Browser nicht unterstützt. Bitte benutze Chrome oder Edge.');
+                return;
+            }
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                recognition.start();
+                isRecording = true;
+                document.getElementById('micText').innerText = 'Aufnahme läuft...';
+                document.getElementById('micBtn').classList.add('bg-red-100', 'text-red-700');
+            }
+        }
+
+        // Send to Spring Boot Backend
+        async function analysiereText() {
+            const btn = document.getElementById('submitBtn');
+            const resultSection = document.getElementById('resultSection');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> KI analysiert Diktat...';
+
+            const payload = {
+                mitarbeiterId: document.getElementById('mitarbeiterId').value,
+                bewohnerId: document.getElementById('bewohnerId').value || null,
+                audioText: document.getElementById('audioText').value
+            };
+
+            try {
+                const response = await fetch('/api/visiten/analysieren', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error('Fehler bei der Analyse: ' + response.statusText);
+
+                const data = await response.json();
+
+                // UI Befüllen
+                document.getElementById('badgeSprache').innerText = 'Sprache: ' + data.originalSprache.toUpperCase();
+                document.getElementById('badgeStatus').innerText = data.status;
+                document.getElementById('resPflegebericht').innerText = data.pflegeberichtDeutsch || 'Kein Pflegebericht generiert.';
+
+                // Vitalwerte
+                const vitalGrid = document.getElementById('resVitalwerte');
+                vitalGrid.innerHTML = '';
+                if (data.vitalwerte) {
+                    if (data.vitalwerte.blutdruck) {
+                        vitalGrid.innerHTML += `<div class="bg-blue-50 p-2.5 rounded border border-blue-100"><span class="text-xs text-blue-600 block">Blutdruck</span><span class="font-bold text-slate-800">${data.vitalwerte.blutdruck.systolisch}/${data.vitalwerte.blutdruck.diastolisch} mmHg</span></div>`;
+                    }
+                    if (data.vitalwerte.pulsBpm) {
+                        vitalGrid.innerHTML += `<div class="bg-blue-50 p-2.5 rounded border border-blue-100"><span class="text-xs text-blue-600 block">Puls</span><span class="font-bold text-slate-800">${data.vitalwerte.pulsBpm} bpm</span></div>`;
+                    }
+                }
+
+                // Medikamente & Besonderheiten
+                renderList('resMedikamente', data.medikamente, m => `${m.medikamentName || m.name} (${m.status || 'GEGEBEN'})`);
+                renderList('resBesonderheiten', data.besonderheiten, b => `${b.beschreibung} [${b.kategorie}]`);
+
+                resultSection.classList.remove('hidden');
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Diktat analysieren';
+            }
+        }
+
+        function renderList(elementId, items, formatFn) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = '';
+            if (!items || items.length === 0) {
+                el.innerHTML = '<li class="text-slate-400 italic">Keine Einträge</li>';
+            } else {
+                items.forEach(item => el.innerHTML += `<li class="text-slate-700">• ${formatFn(item)}</li>`);
+            }
+        }
+    </script>
+</body>
+</html>
